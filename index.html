@@ -1,128 +1,81 @@
-const FaceRecognitionWASM = {
-  meta: {
-    title: "Face Recognition (OpenCV.js WASM + Benchmark)",
-    framework: "Plain JS + OpenCV.js (WASM)",
-    pipeline: [
-      "Haarcascade frontalface",
-      "Largest face selection",
-      "Resize 100×100",
-      "LBP histogram (256 dim)",
-      "Cosine similarity",
-      "Stop on verified",
-      "Benchmark 50 frame"
-    ]
-  },
+FaceRecognitionWASM.objectDetect = {
+  
+  /** DETEKSI WARNA DOMINAN PADA ROI */
+  detectColor(mat) {
+    const hsv = new cv.Mat();
+    cv.cvtColor(mat, hsv, cv.COLOR_BGR2HSV);
 
-  ui: {
-    cameraSelect: "#camera",
-    sizeSelect: "#size",
-    nthSelect: "#nth",
-    showVideoCheckbox: "#showVideo",
-    startBtn: "#start",
-    stopBtn: "#stop",
-    nameInput: "#name",
-    samplesSelect: "#samples",
-    thresholdInput: "#th",
-    enrollBtn: "#enroll",
-    clearDbBtn: "#clearDb",
-    exportBtn: "#exportDb",
-    importInput: "#importDb",
-    statusText: "#status",
-    logText: "#log",
-    video: "#video",
-    canvas: "#canvas",
-    benchmark: {
-      textArea: "#bench",
-      info: "#benchInfo",
-      svg: "#benchSvg",
-      renderBtn: "#renderChart",
-      clearBtn: "#clearBench"
+    let colorName = "unknown";
+
+    // Mask warna dasar HSV
+    const colors = {
+      red:    { low: [0, 100, 100], high: [10, 255, 255] },
+      green:  { low: [35, 50, 50],  high: [85, 255, 255] },
+      blue:   { low: [100, 80, 80], high: [130, 255, 255] },
+      yellow: { low: [20, 80, 80],  high: [35, 255, 255] },
+      black:  { low: [0, 0, 0],     high: [180, 255, 40] },
+      white:  { low: [0, 0, 200],   high: [180, 40, 255] }
+    };
+
+    let maxPixels = 0;
+    for (const key in colors) {
+      const low = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), colors[key].low);
+      const high = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), colors[key].high);
+      const mask = new cv.Mat();
+      cv.inRange(hsv, low, high, mask);
+
+      const count = cv.countNonZero(mask);
+      if (count > maxPixels) {
+        maxPixels = count;
+        colorName = key;
+      }
+
+      low.delete(); high.delete(); mask.delete();
     }
+
+    hsv.delete();
+    return colorName;
   },
 
-  state: {
-    running: false,
-    stream: null,
-    rafId: null,
 
-    size: { width: 640, height: 480 },
-    detectEveryN: 2,
-    frameIndex: 0,
-    facesCount: 0,
+  /** DETEKSI OBJEK DENGAN CONTOUR */
+  detectItem(mat) {
+    const gray = new cv.Mat();
+    cv.cvtColor(mat, gray, cv.COLOR_BGR2GRAY);
+    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
 
-    enrolling: false,
-    enrollName: "",
-    enrollLeft: 0,
+    const thresh = new cv.Mat();
+    cv.threshold(gray, thresh, 60, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-    procFPS: 0,
-    lastFPSTime: 0,
-    procCount: 0,
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-    benchmark: {
-      data: [],
-      max: 50
+    let itemDetected = null;
+
+    if (contours.size() > 0) {
+      const cnt = contours.get(0);
+      const rect = cv.boundingRect(cnt);
+
+      const aspect = rect.width / rect.height;
+
+      const roi = mat.roi(rect);
+      const color = this.detectColor(roi);
+
+      // RULE BASED CLASSIFICATION
+      if (aspect < 0.6) itemDetected = "hp";
+      else if (aspect > 2.5) itemDetected = "spidol";
+      else if (aspect > 1.5 && aspect < 2.5) itemDetected = "penghapusPapanTulis";
+      else itemDetected = "mouse";
+
+      roi.delete();
     }
-  },
 
-  db: {
-    key: "face_db",
-    labels: []
-  },
+    gray.delete();
+    thresh.delete();
+    contours.delete();
+    hierarchy.delete();
 
-  config: {
-    cascadeURL:
-      "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_alt2.xml",
-    lbpSize: 100,
-    defaultThreshold: 0.90
-  },
-
-  /** ===========================
-   * Tambahan objek yang kamu minta
-   * =========================== */
-  items: {
-    hp: {
-      nama: "HP",
-      kategori: "Elektronik",
-      deskripsi: "Perangkat komunikasi mobile / smartphone",
-      properti: {
-        merek: null,
-        model: null,
-        warna: null,
-        kapasitasBaterai: null
-      }
-    },
-
-    spidol: {
-      nama: "Spidol",
-      kategori: "Alat tulis",
-      deskripsi: "Spidol untuk menulis di papan tulis",
-      properti: {
-        warna: null,
-        jenis: "whiteboard marker",
-        refillable: false
-      }
-    },
-
-    penghapusPapanTulis: {
-      nama: "Penghapus Papan Tulis",
-      kategori: "Aksesoris tulis",
-      deskripsi: "Penghapus untuk papan tulis / whiteboard",
-      properti: {
-        bahan: "busa / felt",
-        warna: null
-      }
-    },
-
-    mouse: {
-      nama: "Mouse",
-      kategori: "Periferal komputer",
-      deskripsi: "Perangkat input komputer",
-      properti: {
-        jenis: "optical / laser",
-        koneksi: "wired / wireless",
-        dpi: null,
-        warna: null
-      }
-    }
+    return itemDetected;
   }
 };
