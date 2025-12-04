@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Face Recognition + Object & Color Detection (OpenCV.js WASM)</title>
+<title>Face Recognition (OpenCV.js WebAssembly + Benchmark)</title>
 <style>
   :root{
     --bg:#0f1720;
@@ -95,7 +95,6 @@
     border-radius:10px;
     margin-top:6px;
   }
-  .small{font-size:12px}
 </style>
 </head>
 <body>
@@ -104,14 +103,17 @@
       Face Recognition — WebAssembly
       <span class="pill">OpenCV.js 4.x (WASM)</span>
       <span class="pill">Cascade + LBP + Cosine</span>
-      <span class="pill">+ Object & Color Detection</span>
+      <span class="pill">Log 50 frame</span>
+      <span class="pill">Stop on Verified</span>
     </h2>
 
     <div class="grid">
       <div>
         <label>Pilih kamera</label>
         <select id="camera"></select>
-        <div class="muted small">Jika kosong: klik Start lalu izinkan kamera.</div>
+        <div class="muted" style="font-size:12px">
+          Jika kosong: klik Start lalu izinkan kamera.
+        </div>
       </div>
       <div>
         <label>Ukuran canvas</label>
@@ -140,11 +142,11 @@
     </div>
 
     <div class="row" style="margin-top:10px">
-      <div style="flex:1 1 auto;min-width:210px">
+      <div>
         <label>Nama untuk enroll</label>
         <input id="name" placeholder="mis: Sismadi">
       </div>
-      <div style="width:120px">
+      <div>
         <label>Sample</label>
         <select id="samples">
           <option>10</option>
@@ -153,7 +155,7 @@
           <option>30</option>
         </select>
       </div>
-      <div style="width:120px">
+      <div>
         <label>Threshold cosine</label>
         <input id="th" value="0.90">
       </div>
@@ -168,21 +170,8 @@
       </div>
     </div>
 
-    <div style="margin-top:12px" class="row">
-      <label style="margin:0">
-        <input type="checkbox" id="detectObjects"> Deteksi objek berwarna
-      </label>
-      <label style="margin:0">
-        <input type="checkbox" id="showColorInfo" checked> Tampilkan informasi warna (RGB / HEX)
-      </label>
-      <label style="margin:0">
-        <input type="checkbox" id="drawBoxes" checked> Gambar bounding box
-      </label>
-      <div class="muted small" style="margin-left:8px">Preset warna: Merah, Hijau, Biru, Kuning</div>
-    </div>
-
     <p class="muted" id="status">
-      Status: memuat OpenCV.js (WebAssembly)… 
+      Status: memuat OpenCV.js (WebAssembly)…
     </p>
     <video id="video" playsinline autoplay muted></video>
     <canvas id="canvas" width="640" height="480"></canvas>
@@ -191,22 +180,28 @@
       <label>Benchmark log (ms per processed frame) — maksimal 50 data (index,ms)</label>
       <textarea id="bench"></textarea>
       <div class="row" style="margin-top:6px;align-items:center">
-        <span id="benchInfo" class="muted small" style="flex:1 1 auto">Belum ada data benchmark.</span>
+        <span id="benchInfo" class="muted" style="flex:1 1 auto;font-size:12px">
+          Belum ada data benchmark.
+        </span>
         <button id="renderChart" class="secondary">Render Chart</button>
         <button id="clearBench" class="secondary">Clear Log</button>
       </div>
       <svg id="benchSvg"></svg>
     </div>
 
-    <p class="muted small" style="margin-top:8px">
-      Pipeline: Haar cascade → wajah terbesar → LBP 100×100 → cosine similarity.
-      Ditambah: deteksi objek berwarna dengan threshold HSV sederhana; menampilkan warna dominan.
+    <p class="muted" style="margin-top:8px">
+      Versi ini identik dengan baseline (OpenCV.js 3.4 asm.js), hanya berbeda
+      pada backend WebAssembly. Pipeline: Haar cascade → wajah terbesar →
+      LBP 100×100 → cosine similarity. Jika score ≥ threshold, pemindaian
+      dihentikan dan log ditulis ke console + panel log. Benchmark & chart
+      menampilkan 50 frame terakhir secara real-time.
     </p>
     <pre id="log" class="muted"></pre>
   </div>
 
   <!-- OpenCV.js 4.x: build WebAssembly -->
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js"
+          onload="onOpenCvReady()"></script>
 
   <script>
   // ===== DOM refs & util UI =====
@@ -225,10 +220,6 @@
   const btnClear  = $("clearDb");
   const btnExport = $("exportDb");
   const inImport  = $("importDb");
-
-  const detectObjectsCb = $("detectObjects");
-  const showColorInfoCb = $("showColorInfo");
-  const drawBoxesCb = $("drawBoxes");
 
   const statusEl = $("status");
   const logEl    = $("log");
@@ -322,7 +313,7 @@
   }
 
   // ===== Benchmark data & helpers =====
-  const benchData = [];
+  const benchData = []; // dt per processed frame (ms)
   const MAX_BENCH = 50;
 
   function benchAdd(dt){
@@ -577,7 +568,9 @@
     statusEl.textContent='Status: stopped';
   };
 
-  showVideoCb.onchange = ()=>{ video.style.display = showVideoCb.checked ? 'block' : 'none'; };
+  showVideoCb.onchange = ()=>{
+    video.style.display = showVideoCb.checked ? 'block' : 'none';
+  };
 
   btnEnroll.onclick = ()=>{
     const nm = (nameEl.value||'').trim();
@@ -621,22 +614,7 @@
     }
   };
 
-  // ===== Color presets (HSV ranges) =====
-  // HSV ranges are [H, S, V] with H in [0..179] (OpenCV), S,V in [0..255]
-  const COLOR_PRESETS = [
-    {name:'Merah', ranges:[ {low:[0,80,60], high:[10,255,255]}, {low:[170,80,60], high:[179,255,255]} ]},
-    {name:'Kuning', ranges:[ {low:[18,80,60], high:[35,255,255]} ]},
-    {name:'Hijau', ranges:[ {low:[36,60,40], high:[85,255,255]} ]},
-    {name:'Biru', ranges:[ {low:[86,80,40], high:[130,255,255]} ]},
-  ];
-
-  // Helper: convert mean scalar to hex
-  function rgbToHex(r,g,b){
-    const toHex = v => ('0'+Math.round(v).toString(16)).slice(-2);
-    return '#'+toHex(r)+toHex(g)+toHex(b);
-  }
-
-  // ===== Main loop (detect+recognize+benchmark+object color) =====
+  // ===== Main loop (detect+recognize+benchmark) =====
   function startLoop(){
     if(rgba){ rgba.delete(); rgba=null; }
     if(gray){ gray.delete(); gray=null; }
@@ -703,7 +681,6 @@
                 if(enrollLeft<=0){
                   scaleInPlace(enrollSum, 1/parseInt(samplesEl.value,10));
                   const db = loadDB();
-                  // remove existing same name
                   db.labels = db.labels.filter(x=>x.name===nameEl.value.trim()?false:true);
                   db.labels.push({name:nameEl.value.trim(), vec:Array.from(enrollSum)});
                   saveDB(db);
@@ -723,7 +700,6 @@
                 }
               }
 
-              // draw face rectangles
               ctx.lineWidth = Math.max(2, Math.round(canvas.width/200));
               for(let i=0;i<faces.size();i++){
                 const rr=faces.get(i);
@@ -742,15 +718,6 @@
 
               roi.delete();
               res.delete();
-            }
-
-            // ----- Object & Color detection (lightweight HSV thresholding) -----
-            if(detectObjectsCb.checked){
-              try{
-                detectColoredObjectsAndAnnotate(rgba);
-              }catch(e){
-                console.error('object-detect error', e);
-              }
             }
 
             const t1 = performance.now();
@@ -812,125 +779,6 @@
 
   if(navigator.mediaDevices?.enumerateDevices){
     fillCameraList().catch(()=>{});
-  }
-
-  // ===== Object & Color detection impl =====
-  function detectColoredObjectsAndAnnotate(matRGBA){
-    // matRGBA: cv.Mat CV_8UC4 (canvas size)
-    // We'll convert to RGB->HSV, threshold per preset, find contours, annotate on canvas via ctx
-    const src = new cv.Mat();
-    const hsv = new cv.Mat();
-    const mask = new cv.Mat();
-    try{
-      // Convert RGBA -> RGB
-      cv.cvtColor(matRGBA, src, cv.COLOR_RGBA2RGB);
-      // RGB -> HSV
-      cv.cvtColor(src, hsv, cv.COLOR_RGB2HSV);
-
-      const contours = new cv.MatVector();
-      const hierarchy = new cv.Mat();
-
-      for(const preset of COLOR_PRESETS){
-        // Create combined mask for ranges (some colors like red have two ranges)
-        mask.setTo(new cv.Scalar(0,0,0,0));
-        let firstRange=true;
-        for(const r of preset.ranges){
-          const low = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), r.low);
-          const high = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), r.high);
-          const tmp = new cv.Mat();
-          cv.inRange(hsv, low, high, tmp);
-          if(firstRange){
-            tmp.copyTo(mask);
-            firstRange=false;
-          }else{
-            cv.bitwise_or(mask, tmp, mask);
-          }
-          low.delete(); high.delete(); tmp.delete();
-        }
-
-        // Morphology to remove noise
-        const M = cv.Mat.ones(3,3,cv.CV_8U);
-        cv.morphologyEx(mask, mask, cv.MORPH_OPEN, M);
-        cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, M);
-        M.delete();
-
-        // Find contours
-        cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-        for(let i=0;i<contours.size();i++){
-          const cnt = contours.get(i);
-          const rect = cv.boundingRect(cnt);
-          const area = cv.contourArea(cnt);
-          // filter small
-          if(area < 400) { cnt.delete(); continue; }
-
-          // compute mean color from original RGBA using mask region
-          const roiMask = new cv.Mat();
-          // create small mask for bounding rect region to accelerate mean
-          roiMask.create(rect.height, rect.width, cv.CV_8UC1);
-          roiMask.setTo(new cv.Scalar(0));
-          // copy relevant part from mask to roiMask
-          const maskRoi = mask.roi(rect);
-          maskRoi.copyTo(roiMask);
-          // compute mean on matRGBA (note: matRGBA is RGBA)
-          const meanScalar = cv.mean(matRGBA.roi(rect), roiMask);
-          // meanScalar is [b,g,r,a] because matRGBA is RGBA; convert to RGB order
-          const b = meanScalar[0], g = meanScalar[1], r = meanScalar[2];
-          const hex = rgbToHex(r,g,b);
-
-          // draw bounding box & label on canvas (2D ctx)
-          if(drawBoxesCb.checked){
-            ctx.lineWidth = Math.max(2, Math.round(canvas.width/220));
-            ctx.strokeStyle = preset.name === 'Merah' ? '#ff4d4d' :
-                              preset.name === 'Hijau' ? '#7CFC00' :
-                              preset.name === 'Biru' ? '#61DAFB' :
-                              preset.name === 'Kuning' ? '#ffd166' : '#fff';
-            ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-
-            // label background
-            const label = `${preset.name} ${Math.round(area)}px`;
-            ctx.fillStyle='rgba(0,0,0,0.5)';
-            const w = ctx.measureText(label).width + 14;
-            ctx.fillRect(rect.x, rect.y - 20, w, 18);
-            ctx.fillStyle='#fff';
-            ctx.fillText(label, rect.x + 7, rect.y - 6);
-          }
-
-          if(showColorInfoCb.checked){
-            // draw small filled color box + hex text
-            const boxW = 36, boxH = 16;
-            const px = rect.x + rect.width - boxW - 4;
-            const py = rect.y - boxH - 6;
-            // background
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            ctx.fillRect(px-2, py-2, boxW+4, boxH+20);
-            // color swatch
-            ctx.fillStyle = hex;
-            ctx.fillRect(px, py, boxW, boxH);
-            // text rgb & hex
-            ctx.fillStyle = '#fff';
-            const txt = `RGB(${Math.round(r)},${Math.round(g)},${Math.round(b)}) ${hex}`;
-            ctx.font = '11px system-ui,Arial';
-            ctx.fillText(txt, px - 2, py + boxH + 12);
-            ctx.font = '14px system-ui,Arial';
-          }
-
-          roiMask.delete();
-          maskRoi.delete();
-          cnt.delete();
-        }
-        contours.delete(); hierarchy.delete && hierarchy.delete();
-        // recreate contours/hierarchy for next preset to avoid reuse issues
-      }
-
-      // free
-      src.delete(); hsv.delete(); mask.delete();
-    }catch(err){
-      // ensure deletion on error
-      try{ src.delete(); }catch(e){}
-      try{ hsv.delete(); }catch(e){}
-      try{ mask.delete(); }catch(e){}
-      throw err;
-    }
   }
   </script>
 </body>
