@@ -3,206 +3,210 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Face Recognition (OpenCV.js WebAssembly + Benchmark)</title>
+<title>Face & Object Detection — OpenCV.js (WASM)</title>
+
 <style>
   :root{
-    --bg:#0f1720;
-    --panel:#0b1220;
-    --text:#e6eef6;
-    --muted:#8fa4bf;
-    --btn:#2b6cb0;
-    --btn2:#334155;
-    --border:#1b2b48;
+    --bg:#0f1720;--panel:#0b1220;--text:#e6eef6;--muted:#8fa4bf;
+    --btn:#2b6cb0;--btn2:#334155;--border:#1b2b48;
   }
-  *{box-sizing:border-box}
-  body{
-    margin:16px;
-    background:var(--bg);
-    color:var(--text);
-    font:14px/1.55 system-ui,Segoe UI,Roboto,Arial;
-  }
-  .card{
-    max-width:1000px;
-    margin:auto;
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:14px;
-    padding:16px;
-    box-shadow:0 10px 24px rgba(0,0,0,.5);
-  }
-  h2{margin:0 0 10px}
-  .muted{color:var(--muted)}
-  label{display:block;margin:.5rem 0 .2rem;color:#9fb0c9}
-  input,select,textarea{
-    width:100%;
-    padding:8px;
-    border-radius:8px;
-    border:1px solid #20314a;
-    background:#071623;
-    color:#dfeefc;
-    font:13px system-ui,Segoe UI,Roboto,Arial;
-  }
-  textarea{resize:vertical;min-height:80px}
-  button{
-    padding:8px 12px;
-    border:0;
-    border-radius:10px;
-    background:var(--btn);
-    color:#fff;
-    cursor:pointer;
-  }
+  body{margin:16px;background:var(--bg);color:var(--text);
+    font:14px/1.55 system-ui,Segoe UI}
+  .card{max-width:1000px;margin:auto;background:var(--panel);
+    border:1px solid var(--border);border-radius:14px;padding:16px;
+    box-shadow:0 10px 24px rgba(0,0,0,.5)}
+  button{padding:8px 12px;border:0;border-radius:10px;
+    background:var(--btn);color:#fff;cursor:pointer}
   button.secondary{background:var(--btn2)}
-  button:disabled{opacity:.6;cursor:not-allowed}
-  .grid{
-    display:grid;
-    grid-template-columns:1fr 140px 140px 220px;
-    gap:10px;
-  }
-  .row{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-    align-items:end;
-  }
-  #canvas{
-    width:100%;
-    max-width:1000px;
-    border-radius:10px;
-    background:#000;
-    display:block;
-  }
-  #video{
-    width:100%;
-    max-width:1000px;
-    border-radius:10px;
-    margin:8px 0;
-    display:none;
-    opacity:.7;
-  }
-  .pill{
-    display:inline-block;
-    padding:4px 8px;
-    border-radius:999px;
-    background:#1a2a44;
-    margin-left:6px;
-    font-size:12px;
-  }
-  pre{white-space:pre-wrap}
-  #benchSvg{
-    width:100%;
-    height:160px;
-    background:#020617;
-    border-radius:10px;
-    margin-top:6px;
-  }
+  select,input{width:100%;padding:8px;border-radius:8px;border:1px solid #20314a;
+    background:#071623;color:#dfeefc}
+  .grid{display:grid;grid-template-columns:1fr 140px 140px 240px;gap:10px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+  #canvas,#video{width:100%;max-width:1000px;border-radius:12px}
+  #video{opacity:.6;display:none}
+  .pill{display:inline-block;padding:4px 8px;border-radius:999px;
+    background:#1a2a44;margin-left:6px;font-size:12px}
+  textarea{width:100%;min-height:80px;background:#071623;color:#fff}
+  #benchSvg{width:100%;height:160px;background:#020617;border-radius:12px}
 </style>
 </head>
+
 <body>
-  <div class="card">
-    <h2>
-      Face Recognition — WebAssembly
-      <span class="pill">OpenCV.js 4.x (WASM)</span>
-      <span class="pill">Cascade + LBP + Cosine</span>
-      <span class="pill">Log 50 frame</span>
-      <span class="pill">Stop on Verified</span>
-    </h2>
+<div class="card">
 
-    <!-- UI Atas -->
-    <div class="grid">
-      <div>
-        <label>Pilih kamera</label>
-        <select id="camera"></select>
-        <div class="muted" style="font-size:12px">
-          Jika kosong: klik Start lalu izinkan kamera.
-        </div>
-      </div>
-      <div>
-        <label>Ukuran canvas</label>
-        <select id="size">
-          <option value="320x240">320×240</option>
-          <option value="480x360">480×360</option>
-          <option value="640x480" selected>640×480</option>
-        </select>
-      </div>
-      <div>
-        <label>Process every N frames</label>
-        <select id="nth">
-          <option value="1">N=1</option>
-          <option value="2" selected>N=2</option>
-          <option value="3">N=3</option>
-          <option value="4">N=4</option>
-        </select>
-      </div>
-      <div class="row">
-        <button id="start" disabled>Start</button>
-        <button id="stop" class="secondary" disabled>Stop</button>
-        <label style="display:flex;gap:6px;align-items:center;color:#9fb0c9">
-          <input type="checkbox" id="showVideo"> preview video
-        </label>
-      </div>
-    </div>
+<h2>
+  Face & Object Detector — WebAssembly
+  <span class="pill">OpenCV.js</span>
+  <span class="pill">Cascade + LBP</span>
+</h2>
 
-    <!-- UI Enroll -->
-    <div class="row" style="margin-top:10px">
-      <div>
-        <label>Nama untuk enroll</label>
-        <input id="name" placeholder="mis: Sismadi">
-      </div>
-      <div>
-        <label>Sample</label>
-        <select id="samples">
-          <option>10</option>
-          <option>15</option>
-          <option selected>20</option>
-          <option>30</option>
-        </select>
-      </div>
-      <div>
-        <label>Threshold cosine</label>
-        <input id="th" value="0.90">
-      </div>
-      <div class="row">
-        <button id="enroll" class="secondary" disabled>Enroll</button>
-        <button id="clearDb" class="secondary">Clear DB</button>
-        <button id="exportDb" class="secondary">Export</button>
-        <label class="secondary" style="padding:8px 12px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:#334155">
-          Import
-          <input id="importDb" type="file" accept="application/json" style="display:none">
-        </label>
-      </div>
-    </div>
-
-    <p class="muted" id="status">
-      Status: memuat OpenCV.js (WebAssembly)…  
-    </p>
-
-    <video id="video" playsinline autoplay muted></video>
-    <canvas id="canvas" width="640" height="480"></canvas>
-
-    <!-- Benchmark -->
-    <div style="margin-top:12px">
-      <label>Benchmark log (ms per processed frame) — maksimal 50 data</label>
-      <textarea id="bench"></textarea>
-      <div class="row" style="margin-top:6px;align-items:center">
-        <span id="benchInfo" class="muted" style="flex:1 1 auto;font-size:12px">
-          Belum ada data benchmark.
-        </span>
-        <button id="renderChart" class="secondary">Render Chart</button>
-        <button id="clearBench" class="secondary">Clear Log</button>
-      </div>
-      <svg id="benchSvg"></svg>
-    </div>
-
-    <p class="muted" style="margin-top:8px">
-      Versi WASM identik dengan baseline asm.js, hanya backend berbeda.
-    </p>
-
-    <pre id="log" class="muted"></pre>
+<!-- UI Kamera -->
+<div class="grid">
+  <div>
+    <label>Kamera</label>
+    <select id="camera"></select>
   </div>
 
-  <!-- OpenCV.js -->
-  <script async src="https://docs.opencv.org/4.x/opencv.js"
-          onload="onOpenCvReady()"></script>
+  <div>
+    <label>Ukuran</label>
+    <select id="size">
+      <option>320x240</option><option>480x360</option>
+      <option selected>640x480</option>
+    </select>
+  </div>
 
-  <!-- JS akan dikirim pada BAGIAN 2 & 3 -->
-  <script>
+  <div>
+    <label>Process N frame</label>
+    <select id="nth">
+      <option>1</option><option selected>2</option><option>3</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <button id="start">Start</button>
+    <button id="stop" class="secondary" disabled>Stop</button>
+    <label><input type="checkbox" id="showVideo"> Preview</label>
+  </div>
+</div>
+
+<!-- Mode Detector -->
+<div class="row" style="margin-top:10px">
+  <label>Mode:</label>
+  <select id="mode">
+    <option value="face" selected>Deteksi Wajah</option>
+    <option value="object">Deteksi Objek</option>
+  </select>
+</div>
+
+<p id="status" class="muted">Memuat OpenCV.js...</p>
+
+<video id="video" autoplay muted></video>
+<canvas id="canvas" width="640" height="480"></canvas>
+
+</div>
+
+<!-- OpenCV.js -->
+<script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
+
+<script>
+let video = document.getElementById("video");
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
+let running = false;
+let cap, gray, classifierFace, classifierObj;
+let frameCount = 0;
+
+function log(s){ document.getElementById("status").textContent = s }
+
+async function onOpenCvReady(){
+  log("OpenCV.js Loaded ✓");
+
+  cv['onRuntimeInitialized'] = async () => {
+    log("OpenCV Runtime OK");
+
+    // Cascade untuk wajah
+    classifierFace = new cv.CascadeClassifier();
+    let faceXML = 'haarcascade_frontalface_default.xml';
+    await loadCascade(faceXML);
+    classifierFace.load(faceXML);
+
+    // Cascade untuk objek (bola / umum)
+    classifierObj = new cv.CascadeClassifier();
+    let objXML = 'haarcascade_eye.xml'; 
+    await loadCascade(objXML);
+    classifierObj.load(objXML);
+
+    gray = new cv.Mat();
+
+    loadCameraList();
+  };
+}
+
+async function loadCascade(name){
+  let url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/" + name;
+  let xml = await fetch(url).then(r=>r.text());
+  cv.FS_createDataFile("/", name, xml, true, false);
+}
+
+async function loadCameraList(){
+  let list = document.getElementById("camera");
+  list.innerHTML = "";
+
+  let devs = await navigator.mediaDevices.enumerateDevices();
+  devs.filter(d=>d.kind==="videoinput").forEach((d,i)=>{
+    let opt = document.createElement("option");
+    opt.value = d.deviceId;
+    opt.textContent = d.label || "Camera " + (i+1);
+    list.appendChild(opt);
+  });
+
+  document.getElementById("start").disabled = false;
+}
+
+document.getElementById("start").onclick = async () => {
+  let camId = document.getElementById("camera").value;
+
+  let stream = await navigator.mediaDevices.getUserMedia({
+    video:{ deviceId: camId ? {exact:camId}:{}, width:640, height:480 }
+  });
+
+  video.srcObject = stream;
+  video.play();
+
+  running = true;
+
+  document.getElementById("stop").disabled = false;
+  document.getElementById("start").disabled = true;
+
+  loop();
+};
+
+document.getElementById("stop").onclick = () => {
+  running = false;
+  let tracks = video.srcObject?.getTracks();
+  tracks?.forEach(t=>t.stop());
+  log("Stopped");
+  document.getElementById("start").disabled = false;
+  document.getElementById("stop").disabled = true;
+};
+
+function loop(){
+  if(!running){ return }
+
+  ctx.drawImage(video,0,0,canvas.width,canvas.height);
+
+  frameCount++;
+  let N = parseInt(document.getElementById("nth").value);
+  if(frameCount % N === 0){ detect() }
+
+  requestAnimationFrame(loop);
+}
+
+function detect(){
+  let mode = document.getElementById("mode").value;
+
+  let img = cv.imread(canvas);
+  cv.cvtColor(img, gray, cv.COLOR_RGBA2GRAY);
+
+  let faces = new cv.RectVector();
+
+  if(mode === "face"){
+    classifierFace.detectMultiScale(gray, faces, 1.2, 4, 0);
+  } else {
+    classifierObj.detectMultiScale(gray, faces, 1.2, 4, 0);
+  }
+
+  for(let i=0;i<faces.size();i++){
+    let r = faces.get(i);
+    cv.rectangle(img, new cv.Point(r.x,r.y),
+      new cv.Point(r.x+r.width, r.y+r.height),
+      [0,255,0,255], 2);
+  }
+
+  cv.imshow("canvas", img);
+  img.delete();
+}
+</script>
+
+</body>
+</html>
